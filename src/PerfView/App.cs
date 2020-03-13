@@ -1231,12 +1231,7 @@ namespace PerfView
         {
             get
             {
-                if (!s_InternalUser.HasValue)
-                {
-                    s_InternalUser = s_IsUnderTest || SymbolPath.ComputerNameExists(FeedbackServer, 400);
-                }
-
-                return s_InternalUser.Value;
+                return true;
             }
         }
         /// <summary>
@@ -1364,7 +1359,6 @@ namespace PerfView
 
         private static DateTime s_startTime;    // used as a unique ID for the launch of the program (for SQM style logging)    
         internal static bool s_IsUnderTest; // set from tests: indicates we're in a test
-        private static bool? s_InternalUser;
 #if !PUBLIC_BUILD
         private static DateTime s_ProbedForFeedbackAt;
         private static bool? s_CanSendFeedback;
