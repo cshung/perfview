@@ -30,7 +30,7 @@
   </ItemGroup>
 
   <PropertyGroup>
-    <DefineConstants>$(DefineConstants);PERFVIEW</DefineConstants>
+    <DefineConstants>$(DefineConstants);PERFVIEW;CROSS_GENERATION_LIVENESS</DefineConstants>
     <NoWarn>$(NoWarn),0436,0618</NoWarn>
   </PropertyGroup>
 
@@ -140,7 +140,53 @@
     </None>
     <None Include="SupportFiles\Eula.rtf" />
   </ItemGroup>
+  <PropertyGroup>
+    <X86DebuggerPath>c:\toolssw\debuggers\x86\</X86DebuggerPath>
+    <X64DebuggerPath>c:\toolssw\debuggers\amd64\</X64DebuggerPath>
+  </PropertyGroup>
   <ItemGroup>
+    <EmbeddedResource Include="$(X86DebuggerPath)dbgeng.dll">
+      <Type>Non-Resx</Type>
+      <WithCulture>false</WithCulture>
+      <LogicalName>.\x86\dbgeng.dll</LogicalName>
+      <Link>x86\dbgeng.dll</Link>
+      <Visible>False</Visible>
+    </EmbeddedResource>
+    <EmbeddedResource Include="$(X86DebuggerPath)dbghelp.dll">
+      <Type>Non-Resx</Type>
+      <WithCulture>false</WithCulture>
+      <LogicalName>.\x86\dbghelp.dll</LogicalName>
+      <Link>x86\dbghelp.dll</Link>
+      <Visible>False</Visible>
+    </EmbeddedResource>
+    <EmbeddedResource Include="$(X86DebuggerPath)symsrv.dll">
+      <Type>Non-Resx</Type>
+      <WithCulture>false</WithCulture>
+      <LogicalName>.\x86\symsrv.dll</LogicalName>
+      <Link>x86\symsrv.dll</Link>
+      <Visible>False</Visible>
+    </EmbeddedResource>
+    <EmbeddedResource Include="$(X64DebuggerPath)dbgeng.dll">
+      <Type>Non-Resx</Type>
+      <WithCulture>false</WithCulture>
+      <LogicalName>.\amd64\dbgeng.dll</LogicalName>
+      <Link>amd64\dbgeng.dll</Link>
+      <Visible>False</Visible>
+    </EmbeddedResource>
+    <EmbeddedResource Include="$(X64DebuggerPath)dbghelp.dll">
+      <Type>Non-Resx</Type>
+      <WithCulture>false</WithCulture>
+      <LogicalName>.\amd64\dbghelp.dll</LogicalName>
+      <Link>amd64\dbghelp.dll</Link>
+      <Visible>False</Visible>
+    </EmbeddedResource>
+    <EmbeddedResource Include="$(X64DebuggerPath)symsrv.dll">
+      <Type>Non-Resx</Type>
+      <WithCulture>false</WithCulture>
+      <LogicalName>.\amd64\symsrv.dll</LogicalName>
+      <Link>amd64\symsrv.dll</Link>
+      <Visible>False</Visible>
+    </EmbeddedResource>
     <EmbeddedResource Include="$(TraceEventSupportFilesBase)native\x86\msdia140.dll">
       <Type>Non-Resx</Type>
       <WithCulture>false</WithCulture>

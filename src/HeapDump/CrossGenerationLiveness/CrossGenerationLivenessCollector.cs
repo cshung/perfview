@@ -28,7 +28,6 @@ namespace Microsoft.Diagnostics.CrossGenerationLiveness
         private Exception _EncounteredException;
         private bool _CapturedDump;
         private string _DumpFilePath;
-        private GCHeapDumper _HeapDumper;
         private CaptureDumpDelegate _CaptureDump;
         private TextWriter _Log;
         private CollectionMetadata _CollectionMetadata;

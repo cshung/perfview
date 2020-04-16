@@ -36,9 +36,6 @@ namespace PerfView
         /// </summary>
         public static void DumpGCHeapForCrossGenerationLiveness(int processID, int generationToTrigger, ulong promotedBytesThreshold, string outputFile, TextWriter log = null, string qualifiers = "")
         {
-            if (!App.IsElevated)
-                throw new ApplicationException("Must be Administrator (elevated).");
-
             var arch = GetArchForProcess(processID);
             if (log != null)
                 log.WriteLine("Starting Heap dump for cross generation liveness on Process {0} running architecture {1}.", processID, arch);
