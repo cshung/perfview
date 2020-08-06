@@ -192,6 +192,8 @@ namespace Microsoft.Diagnostics.CrossGenerationLiveness
                 // If we've exceeded the promoted bytes threshold, take a process dump.
                 if (promotedBytes > _PromotedBytesThreshold)
                 {
+                    eventArgs.Debugger.Execute(@".dump /ma c:\temp\memory.dmp");
+
                     // Take a heap snapshot.
                     _CollectionMetadata = _CaptureDump(_PID);
                     _CapturedDump = true;
