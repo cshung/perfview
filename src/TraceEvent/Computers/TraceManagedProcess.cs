@@ -302,6 +302,11 @@ namespace Microsoft.Diagnostics.Tracing.Analysis
                 }
             });
 
+            source.Clr.AndrewTaskAndrewOpcode += delegate (AndrewTraceData data)
+            {
+                // Game on!
+            };
+
             source.Clr.All += createManagedProc;
             clrPrivate.All += createManagedProc;
 

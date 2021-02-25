@@ -261,6 +261,20 @@ namespace Microsoft.Diagnostics.Tracing.Parsers
             }
         }
 
+        public event Action<AndrewTraceData> AndrewTaskAndrewOpcode
+        {
+            add
+            {
+                // action, eventid, taskid, taskName, taskGuid, opcode, opcodeName, providerGuid, providerName
+                RegisterTemplate(AndrewTemplate(value));
+            }
+            remove
+            {
+                source.UnregisterEventTemplate(value, 206, ProviderGuid);
+                source.UnregisterEventTemplate(value, 206, AndrewTaskGuid);
+            }
+        }
+
         public event Action<GenAwareEndTraceData> GCGenAwareEnd
         {
             add
@@ -2077,6 +2091,10 @@ namespace Microsoft.Diagnostics.Tracing.Parsers
         {                  // action, eventid, taskid, taskName, taskGuid, opcode, opcodeName, providerGuid, providerName
             return new GenAwareBeginTraceData(action, 206, 1, "GC", GCTaskGuid, 1, "GenAwareStart", ProviderGuid, ProviderName);
         }
+        static private AndrewTraceData AndrewTemplate(Action<AndrewTraceData> action)
+        {                  // action, eventid, taskid, taskName, taskGuid, opcode, opcodeName, providerGuid, providerName
+            return new AndrewTraceData(action, 511, 239, "AndrewTask", AndrewTaskGuid, 1, "AndrewOpcode", ProviderGuid, ProviderName);
+        }
         static private GenAwareEndTraceData GenAwareEndTemplate(Action<GenAwareEndTraceData> action)
         {                  // action, eventid, taskid, taskName, taskGuid, opcode, opcodeName, providerGuid, providerName
             return new GenAwareEndTraceData(action, 207, 1, "GC", GCTaskGuid, 2, "GenAwareEnd", ProviderGuid, ProviderName);
@@ -2262,6 +2280,7 @@ namespace Microsoft.Diagnostics.Tracing.Parsers
                 templates[136] = GenAwareEndTemplate(null);
                 templates[137] = JitInstrumentationDataTemplate(null);
                 templates[138] = JitInstrumentationDataVerboseTemplate(null);
+                templates[139] = AndrewTemplate(null);
 
                 templates[139] = ExecutionCheckpointTemplate(null);
                 templates[140] = YieldProcessorMeasurementTemplate(null);
@@ -2315,6 +2334,7 @@ namespace Microsoft.Diagnostics.Tracing.Parsers
         private static readonly Guid LoaderTaskGuid = new Guid(unchecked((int)0xd00792da), unchecked((short)0x07b7), unchecked((short)0x40f5), 0x97, 0xeb, 0x5d, 0x97, 0x4e, 0x05, 0x47, 0x40);
         private static readonly Guid ClrStackTaskGuid = new Guid(unchecked((int)0xd3363dc0), unchecked((short)0x243a), unchecked((short)0x4620), 0xa4, 0xd0, 0x8a, 0x07, 0xd7, 0x72, 0xf5, 0x33);
         private static readonly Guid StrongNameVerificationTaskGuid = new Guid(unchecked((int)0x15447a14), unchecked((short)0xb523), unchecked((short)0x46ae), 0xb7, 0x5b, 0x02, 0x3f, 0x90, 0x0b, 0x43, 0x93);
+        private static readonly Guid AndrewTaskGuid = new Guid(unchecked((int)0xd7c0befd), unchecked((short)0x285e), unchecked((short)0x4ce2), 0x96, 0xc6, 0x0b, 0x8d, 0x30, 0xc4, 0x2f, 0x99);
         private static readonly Guid AuthenticodeVerificationTaskGuid = new Guid(unchecked((int)0xb17304d9), unchecked((short)0x5afa), unchecked((short)0x4da6), 0x9f, 0x7b, 0x5a, 0x4f, 0xa7, 0x31, 0x29, 0xb6);
         private static readonly Guid AppDomainResourceManagementTaskGuid = new Guid(unchecked((int)0x88e83959), unchecked((short)0x6185), unchecked((short)0x4e0b), 0x95, 0xb8, 0x0e, 0x4a, 0x35, 0xdf, 0x61, 0x22);
         private static readonly Guid ILStubTaskGuid = new Guid(unchecked((int)0xd00792da), unchecked((short)0x07b7), unchecked((short)0x40f5), 0x00, 0x00, 0x5d, 0x97, 0x4e, 0x05, 0x47, 0x40);
@@ -2842,6 +2862,70 @@ namespace Microsoft.Diagnostics.Tracing.Parsers.Clr
         }
 
         private event Action<GCNoUserDataTraceData> Action;
+        #endregion
+    }
+
+    public sealed class AndrewTraceData : TraceEvent
+    {
+        public long AndrewField { get { return GetInt64At(0); } }
+        public int ClrInstanceID { get { return GetInt16At(8); } }
+
+        #region Private
+        internal AndrewTraceData(Action<AndrewTraceData> action, int eventID, int task, string taskName, Guid taskGuid, int opcode, string opcodeName, Guid providerGuid, string providerName)
+            : base(eventID, task, taskName, taskGuid, opcode, opcodeName, providerGuid, providerName)
+        {
+            Action = action;
+        }
+        protected internal override void Dispatch()
+        {
+            Action(this);
+        }
+        protected internal override Delegate Target
+        {
+            get { return Action; }
+            set { Action = (Action<AndrewTraceData>)value; }
+        }
+        protected internal override void Validate()
+        {
+            Debug.Assert(!(Version >= 0 && EventDataLength < 10));
+        }
+        public override StringBuilder ToXml(StringBuilder sb)
+        {
+            Prefix(sb);
+            XmlAttrib(sb, "AndrewField ", AndrewField);
+            XmlAttrib(sb, "ClrInstanceID", ClrInstanceID);
+            sb.Append("/>");
+            return sb;
+        }
+
+        public override string[] PayloadNames
+        {
+            get
+            {
+                if (payloadNames == null)
+                {
+                    payloadNames = new string[] { "AndrewField", "ClrInstanceID" };
+                }
+
+                return payloadNames;
+            }
+        }
+
+        public override object PayloadValue(int index)
+        {
+            switch (index)
+            {
+                case 0:
+                    return AndrewField;
+                case 1:
+                    return ClrInstanceID;
+                default:
+                    Debug.Assert(false, "Bad field index");
+                    return null;
+            }
+        }
+
+        private event Action<AndrewTraceData> Action;
         #endregion
     }
 
