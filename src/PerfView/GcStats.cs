@@ -173,7 +173,7 @@ namespace Stats
             }
             writer.WriteLine("</Table>");
             writer.WriteLine("</Center>");
-
+            
             writer.WriteLine("<HR/>");
             writer.WriteLine("<H4><A Name=\"Events_Pause_{0}\">Pause &gt; 200 Msec GC Events for Process {1,5}: {2}<A></H4>", stats.ProcessID, stats.ProcessID, stats.Name);
             PrintEventTable(writer, stats, runtime, 0, delegate (TraceGC _gc) { return _gc.PauseDurationMSec > 200; });

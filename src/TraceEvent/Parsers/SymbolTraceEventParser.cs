@@ -545,7 +545,9 @@ namespace Microsoft.Diagnostics.Tracing.Parsers.Symbol
 
         protected internal override void Validate()
         {
-            Debug.Assert(EventDataLength == SkipUTF8String(HostOffset(32, 1)));
+            // Something must be wrong with this weird length 12 DbgIDILRSDSTraceData
+            // Interestingly, they all comes from the ServiceHub process!
+            Debug.Assert(EventDataLength == 12 || EventDataLength == SkipUTF8String(HostOffset(28, 1)));
         }
 
         public override string[] PayloadNames
