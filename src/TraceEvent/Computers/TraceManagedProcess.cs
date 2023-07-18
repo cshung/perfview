@@ -867,6 +867,31 @@ namespace Microsoft.Diagnostics.Tracing.Analysis
                     }
                 };
 
+                source.Clr.GCDynamic += delegate (GCDynamicTraceData data)
+                {
+                    StringBuilder sb = new StringBuilder();
+                    sb = data.ToXml(sb);
+                    var x = sb.ToString();
+                };
+
+                source.Clr.CommittedUsage += delegate (TraceEvent traceEvent, CommittedUsageTraceData committedUsage)
+                {
+                    var stats = currentManagedProcess(traceEvent);
+                    GCStats.ProcessCommittedUsage(stats, committedUsage);
+                };
+
+                source.Clr.DynamicHeapCountTuning += delegate (TraceEvent traceEvent, DynamicHeapCountTuningTraceData dynamicHeapCountTuning)
+                {
+                    var stats = currentManagedProcess(traceEvent);
+                    GCStats.ProcessDynamicHeapCountTuning(stats, dynamicHeapCountTuning);
+                };
+
+                source.Clr.DynamicHeapCountSample += delegate (TraceEvent traceEvent, DynamicHeapCountSampleTraceData dynamicHeapCountSample)
+                {
+                    var stats = currentManagedProcess(traceEvent);
+                    GCStats.ProcessDynamicHeapCountSample(stats, dynamicHeapCountSample);
+                };
+
                 source.Clr.GCGlobalHeapHistory += delegate (GCGlobalHeapHistoryTraceData data)
                 {
                     var stats = currentManagedProcess(data);
@@ -1835,6 +1860,12 @@ namespace Microsoft.Diagnostics.Tracing.Analysis.GC
     /// </summary>
     public class TraceGC
     {
+        // TODO, AndrewAu, property
+        public CommittedUsageTraceData committedUsageBefore;
+        public CommittedUsageTraceData committedUsageAfter;
+        public DynamicHeapCountTuningTraceData dynamicHeapCountTuning;
+        public DynamicHeapCountSampleTraceData dynamicHeapCountSample;
+
         public enum BGCRevisitState
         {
             Concurrent = 0,
@@ -4591,6 +4622,18 @@ namespace Microsoft.Diagnostics.Tracing.Analysis.GC
             return null;
         }
 
+        internal static TraceGC GetGC(TraceLoadedDotNetRuntime proc, long gcIndex)
+        {
+            for (int i = (proc.GC.GCs.Count - 1); i >= 0; i--)
+            {
+                if (proc.GC.GCs[i].Number == gcIndex)
+                {
+                    return proc.GC.GCs[i];
+                }
+            }
+            return null;
+        }
+
         internal void AddConcurrentPauseTime(TraceGC _event, double RestartEEMSec)
         {
             if (suspendThreadIDBGC > 0)
@@ -4613,7 +4656,7 @@ namespace Microsoft.Diagnostics.Tracing.Analysis.GC
         {
             if (IsServerGCUsed == 1)
             {
-                Debug.Assert(HeapCount > 1);
+                //Debug.Assert(HeapCount > 1);
 
                 if (serverGCThreads.Count < HeapCount)
                 {
@@ -4629,7 +4672,10 @@ namespace Microsoft.Diagnostics.Tracing.Analysis.GC
 
         internal static void ProcessGlobalHistory(TraceLoadedDotNetRuntime proc, GCGlobalHeapHistoryTraceData data)
         {
+            int numHeaps = data.NumHeaps;
+
             // We detected whether we are using Server GC now.
+            // TODO, AndrewAu, this is no longer correct after dynamic heap adaptation.
             proc.GC.m_stats.IsServerGCUsed = ((data.NumHeaps > 1) ? 1 : 0);
             if (proc.GC.m_stats.HeapCount == -1)
             {
@@ -4655,7 +4701,7 @@ namespace Microsoft.Diagnostics.Tracing.Analysis.GC
                     HasCondemnReasons0 = data.HasCondemnReasons0,
                     HasCondemnReasons1 = data.HasCondemnReasons1,
                 };
-                _event.SetHeapCount(proc.GC.m_stats.HeapCount);
+                _event.SetHeapCount(data.NumHeaps);
             }
         }
 
@@ -4776,6 +4822,44 @@ namespace Microsoft.Diagnostics.Tracing.Analysis.GC
                     GcWorkingThreadId = gcThreadId,
                     GcWorkingThreadPriority = gcThreadPriority
                 });
+            }
+        }
+
+        internal static void ProcessCommittedUsage(TraceLoadedDotNetRuntime proc, CommittedUsageTraceData committedUsage)
+        {
+            TraceGC _event = GetLastGC(proc);
+            if (_event != null)
+            {
+                if (_event.committedUsageBefore == null)
+                {
+                    _event.committedUsageBefore = committedUsage;
+                }
+                else
+                {
+                    Debug.Assert(_event.committedUsageAfter == null);
+                    _event.committedUsageAfter = committedUsage;
+                }
+            }
+        }
+
+        internal static void ProcessDynamicHeapCountTuning(TraceLoadedDotNetRuntime proc, DynamicHeapCountTuningTraceData dynamicHeapCountTuning)
+        {
+            TraceGC _event = GetGC(proc, dynamicHeapCountTuning.gcIndex);
+            if (_event != null)
+            {
+                _event.dynamicHeapCountTuning = dynamicHeapCountTuning;
+            }
+        }
+
+        internal static void ProcessDynamicHeapCountSample(TraceLoadedDotNetRuntime proc, DynamicHeapCountSampleTraceData dynamicHeapCountSample)
+        {
+            // TODO, AndrewAu, the runtime is supposed to fire the DynamicHeapCountSample event within GC pause, in that case this is correct.
+            // It is not currently doing that, and this can lead to occassional missed correlation (e.g. _event == null) or assertion (that last GC 
+            // is not BGC but outside of GC pause)
+            TraceGC _event = GetLastGC(proc);
+            if (_event != null)
+            {
+                _event.dynamicHeapCountSample = dynamicHeapCountSample;
             }
         }
 

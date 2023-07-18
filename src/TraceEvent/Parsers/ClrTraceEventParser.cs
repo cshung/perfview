@@ -3,6 +3,7 @@ using FastSerialization;
 using Microsoft.Diagnostics.Tracing.Etlx;
 using Microsoft.Diagnostics.Tracing.Utilities;
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -16,6 +17,37 @@ namespace Microsoft.Diagnostics.Tracing.Parsers
 {
     using Microsoft.Diagnostics.Tracing.Parsers.Clr;
     using System.Collections.Generic;
+
+    // TODO, AndrewAu, property
+    public class CommittedUsageTraceData
+    {
+        public short version;
+        public long totalCommittedInUse;
+        public long totalCommittedInGlobalDecommit;
+        public long totalCommittedInFree;
+        public long totalCommittedInGlobalFree;
+        public long totalBookkeepingCommitted;
+    }
+    public class DynamicHeapCountTuningTraceData
+    {
+        public short version;
+        public short newHeapCount;
+        public long gcIndex;
+        public float medianPercentOverhead;
+        public float smoothedMedianPercentOverhead;
+        public float overheadReductionPerStepUp;
+        public float overheadIncreasePerStepDown;
+        public float spaceCostIncreasePerStepUp;
+        public float spaceCostDecreasePerStepDown;
+    }
+    public class DynamicHeapCountSampleTraceData
+    {
+        public short version;
+        public long gcElapsedTime;
+        public long sohMslWaitTime;
+        public long uohMslWaitTime;
+        public long elapsedBetweenGcs;
+    }
 
     /* Parsers defined in this file */
     // ClrTraceEventParser, ClrRundownTraceEventParser, ClrStressTraceEventParser
@@ -842,6 +874,98 @@ namespace Microsoft.Diagnostics.Tracing.Parsers
             remove
             {
                 source.UnregisterEventTemplate(value, 38, ProviderGuid);
+            }
+        }
+        public event Action<GCDynamicTraceData> GCDynamic
+        {
+            add
+            {
+                // action, eventid, taskid, taskName, taskGuid, opcode, opcodeName, providerGuid, providerName
+                RegisterTemplate(new GCDynamicTraceData(value, 39, 1, "GC", GCTaskGuid, 40, "GCDynamicData", ProviderGuid, ProviderName));
+            }
+            remove
+            {
+                source.UnregisterEventTemplate(value, 39, ProviderGuid);
+            }
+        }
+        public event Action<TraceEvent, CommittedUsageTraceData> CommittedUsage
+        {
+            add
+            {
+                this.GCDynamic += (GCDynamicTraceData d) =>
+                {
+                    if (string.CompareOrdinal(d.Name, "CommittedUsage") == 0)
+                    {
+                        CommittedUsageTraceData committedUsage = new CommittedUsageTraceData();
+                        committedUsage.version = BitConverter.ToInt16(d.Data, 0);
+                        Debug.Assert(!(committedUsage.version == 1 && d.Data.Length != 42));
+                        Debug.Assert(!(committedUsage.version > 1 && d.Data.Length < 42));
+                        committedUsage.totalCommittedInUse = BitConverter.ToInt64(d.Data, 2);
+                        committedUsage.totalCommittedInGlobalDecommit = BitConverter.ToInt64(d.Data, 10);
+                        committedUsage.totalCommittedInFree = BitConverter.ToInt64(d.Data, 18);
+                        committedUsage.totalCommittedInGlobalFree = BitConverter.ToInt64(d.Data, 26);
+                        committedUsage.totalBookkeepingCommitted = BitConverter.ToInt64(d.Data, 34);
+                        value(d, committedUsage);
+                    }
+                };
+            }
+            remove
+            {
+                // TODO, AndrewAu, implementation
+            }
+        }
+        public event Action<TraceEvent, DynamicHeapCountTuningTraceData> DynamicHeapCountTuning
+        {
+            add
+            {
+                this.GCDynamic += (GCDynamicTraceData d) =>
+                {
+                    if (string.CompareOrdinal(d.Name, "DynamicHeapCountTuning") == 0)
+                    {
+                        DynamicHeapCountTuningTraceData dynamicHeapCountTuning = new DynamicHeapCountTuningTraceData();
+                        dynamicHeapCountTuning.version = BitConverter.ToInt16(d.Data, 0);
+                        Debug.Assert(!(dynamicHeapCountTuning.version == 1 && d.Data.Length != 36));
+                        Debug.Assert(!(dynamicHeapCountTuning.version > 1 && d.Data.Length < 36));
+                        dynamicHeapCountTuning.newHeapCount = BitConverter.ToInt16(d.Data, 2);
+                        dynamicHeapCountTuning.gcIndex = BitConverter.ToInt64(d.Data, 4);
+                        dynamicHeapCountTuning.medianPercentOverhead = BitConverter.ToSingle(d.Data, 12);
+                        dynamicHeapCountTuning.smoothedMedianPercentOverhead = BitConverter.ToSingle(d.Data, 16);
+                        dynamicHeapCountTuning.overheadReductionPerStepUp = BitConverter.ToSingle(d.Data, 20);
+                        dynamicHeapCountTuning.overheadIncreasePerStepDown = BitConverter.ToSingle(d.Data, 24);
+                        dynamicHeapCountTuning.spaceCostIncreasePerStepUp = BitConverter.ToSingle(d.Data, 28);
+                        dynamicHeapCountTuning.spaceCostDecreasePerStepDown = BitConverter.ToSingle(d.Data, 32);
+                        value(d, dynamicHeapCountTuning);
+                    }
+                };
+            }
+            remove
+            {
+                // TODO, AndrewAu, implementation
+            }
+        }
+        public event Action<TraceEvent, DynamicHeapCountSampleTraceData> DynamicHeapCountSample
+        {
+            add
+            {
+                this.GCDynamic += (GCDynamicTraceData d) =>
+                {
+                    if (string.CompareOrdinal(d.Name, "DynamicHeapCountSample") == 0)
+                    {
+                        DynamicHeapCountSampleTraceData dynamicHeapCountSample = new DynamicHeapCountSampleTraceData();
+                        dynamicHeapCountSample.version = BitConverter.ToInt16(d.Data, 0);
+                        Debug.Assert(!(dynamicHeapCountSample.version == 1 && d.Data.Length != 34));
+                        Debug.Assert(!(dynamicHeapCountSample.version > 1 && d.Data.Length < 34));
+                        dynamicHeapCountSample.gcElapsedTime = BitConverter.ToInt64(d.Data, 2);
+                        dynamicHeapCountSample.sohMslWaitTime = BitConverter.ToInt64(d.Data, 10);
+                        dynamicHeapCountSample.uohMslWaitTime = BitConverter.ToInt64(d.Data, 18);
+                        dynamicHeapCountSample.elapsedBetweenGcs = BitConverter.ToInt64(d.Data, 26);
+                        value(d, dynamicHeapCountSample);
+                    }
+                };
+            }
+            remove
+            {
+                // TODO, AndrewAu, implementation
             }
         }
         public event Action<IOThreadTraceData> IOThreadCreationStart
@@ -2178,13 +2302,17 @@ namespace Microsoft.Diagnostics.Tracing.Parsers
         {                  // action, eventid, taskid, taskName, taskGuid, opcode, opcodeName, providerGuid, providerName
             return new ContentionLockCreatedTraceData(action, 90, 8, "Contention", ContentionTaskGuid, 11, "LockCreated", ProviderGuid, ProviderName);
         }
+        static private GCDynamicTraceData GCDynamicTemplate(Action<GCDynamicTraceData> action)
+        {                  // action, eventid, taskid, taskName, taskGuid, opcode, opcodeName, providerGuid, providerName
+            return new GCDynamicTraceData(action, 39, 1, "GC", GCTaskGuid, 41, "Dynamic", ProviderGuid, ProviderName);
+        }
 
         static private volatile TraceEvent[] s_templates;
         protected internal override void EnumerateTemplates(Func<string, string, EventFilterResponse> eventsToObserve, Action<TraceEvent> callback)
         {
             if (s_templates == null)
             {
-                var templates = new TraceEvent[145];
+                var templates = new TraceEvent[146];
                 templates[0] = new GCStartTraceData(null, 1, 1, "GC", GCTaskGuid, 1, "Start", ProviderGuid, ProviderName);
                 templates[1] = new GCEndTraceData(null, 2, 1, "GC", GCTaskGuid, 2, "Stop", ProviderGuid, ProviderName);
                 templates[2] = new GCNoUserDataTraceData(null, 3, 1, "GC", GCTaskGuid, 132, "RestartEEStop", ProviderGuid, ProviderName);
@@ -2339,6 +2467,7 @@ namespace Microsoft.Diagnostics.Tracing.Parsers
                 templates[142] = GCLOHCompactTemplate(null);
                 templates[143] = GCFitBucketInfoTemplate(null);
                 templates[144] = ContentionLockCreatedTemplate(null);
+                templates[145] = GCDynamicTemplate(null);
 
                 s_templates = templates;
             }
@@ -7944,6 +8073,75 @@ namespace Microsoft.Diagnostics.Tracing.Parsers.Clr
         private TraceEvent m_data;
         private int m_baseOffset;
         #endregion
+    }
+
+    public sealed class GCDynamicTraceData : TraceEvent
+    {
+        internal GCDynamicTraceData(Action<GCDynamicTraceData> action, int eventID, int task, string taskName, Guid taskGuid, int opcode, string opcodeName, Guid providerGuid, string providerName)
+            : base(eventID, task, taskName, taskGuid, opcode, opcodeName, providerGuid, providerName)
+        {
+            Action = action;
+        }
+
+        public string Name { get { return GetUnicodeStringAt(0); } }
+        public Int32 DataSize { get { return GetInt32At(SkipUnicodeString(0)); } }
+        public byte[] Data { get { return GetByteArrayAt(offset: SkipUnicodeString(0) + 4, DataSize); } }
+        public int ClrInstanceID { get { return GetInt16At(SkipUnicodeString(0) + 4 + DataSize); } }
+
+        protected internal override void Dispatch()
+        {
+            Action(this);
+        }
+
+        protected internal override Delegate Target
+        {
+            get { return Action; }
+            set { Action = (Action<GCDynamicTraceData>)value; }
+        }
+
+        public override string[] PayloadNames
+        {
+            get
+            {
+                if (payloadNames == null)
+                {
+                    payloadNames = new string[] { "Name", "DataSize", "Data", "ClrInstanceID" };
+                }
+
+                return payloadNames;
+            }
+        }
+
+        public override object PayloadValue(int index)
+        {
+            switch (index)
+            {
+                case 0:
+                    return Name;
+                case 1:
+                    return DataSize;
+                case 2:
+                    return Data;
+                case 3:
+                    return ClrInstanceID;
+                default:
+                    Debug.Assert(false, "Bad field index");
+                    return null;
+            }
+        }
+
+        public override StringBuilder ToXml(StringBuilder sb)
+        {
+            Prefix(sb);
+            XmlAttrib(sb, "Name", Name);
+            XmlAttrib(sb, "DataSize", DataSize);
+            XmlAttrib(sb, "Data", string.Join(",", Data));
+            XmlAttrib(sb, "ClrInstanceID", ClrInstanceID);
+            sb.Append("</Event>");
+            return sb;
+        }
+
+        private event Action<GCDynamicTraceData> Action;
     }
 
     public sealed class GCBulkRootStaticVarTraceData : TraceEvent
