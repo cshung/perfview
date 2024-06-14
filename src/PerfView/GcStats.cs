@@ -436,6 +436,10 @@ namespace Stats
 
         public static void ToXmlAttribs(TextWriter writer, TraceProcess stats, TraceLoadedDotNetRuntime runtime, TraceGC gc)
         {
+            // TODO, AndrewAu, this is only meant to debug, to be deleted
+            //
+            writer.Write("DynamicEventsLab {0} {1}", gc.DynamicEvents.SizeAdaptationTuning.new_n_heaps, gc.DynamicEvents.SizeAdaptationTuning.current_gc_index);
+
             writer.Write("   <GCEvent");
             writer.Write(" GCNumber={0}", StringUtilities.QuotePadLeft(gc.Number.ToString(), 10));
             writer.Write(" GCGeneration={0}", StringUtilities.QuotePadLeft(gc.Generation.ToString(), 3));

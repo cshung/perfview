@@ -34,6 +34,7 @@ namespace Microsoft.Diagnostics.Tracing.Parsers
             ((ITraceParserServices)source).RegisterEventTemplate(GCDynamicTemplate(Dispatch, GCDynamicEvent.HeapCountTuningTemplate));
             ((ITraceParserServices)source).RegisterEventTemplate(GCDynamicTemplate(Dispatch, GCDynamicEvent.CommittedUsageTemplate));
             ((ITraceParserServices)source).RegisterEventTemplate(GCDynamicTemplate(Dispatch, GCDynamicEvent.HeapCountSampleTemplate));
+            ((ITraceParserServices)source).RegisterEventTemplate(GCDynamicTemplate(Dispatch, GCDynamicEvent.SizeAdaptationSampleTemplate));
         }
 
         protected override string GetProviderName()
@@ -45,7 +46,7 @@ namespace Microsoft.Diagnostics.Tracing.Parsers
         {
             if (s_templates == null)
             {
-                var templates = new TraceEvent[4];
+                var templates = new TraceEvent[5];
 
                 // This template ensures that all GC dynamic events are parsed properly.
                 templates[0] = GCDynamicTemplate(null, GCDynamicEvent.RawDynamicTemplate);
@@ -55,6 +56,7 @@ namespace Microsoft.Diagnostics.Tracing.Parsers
                 templates[1] = GCDynamicTemplate(null, GCDynamicEvent.HeapCountTuningTemplate);
                 templates[2] = GCDynamicTemplate(null, GCDynamicEvent.CommittedUsageTemplate);
                 templates[3] = GCDynamicTemplate(null, GCDynamicEvent.HeapCountSampleTemplate);
+                templates[4] = GCDynamicTemplate(null, GCDynamicEvent.SizeAdaptationSampleTemplate);
 
                 s_templates = templates;
             }
@@ -64,18 +66,16 @@ namespace Microsoft.Diagnostics.Tracing.Parsers
                     callback(template);
         }
 
-        /// <summary>
-        /// Do not use.  This is here to avoid asserts that detect undeclared event templates.
-        /// </summary>
-        public event Action<GCDynamicTraceEvent> GCDynamicTraceEvent
+        private event Action<RawDynamicTraceEvent> _gcDynamicTraceEvent;
+        public event Action<RawDynamicTraceEvent> GCDynamicTraceEvent
         {
             add
             {
-                throw new NotSupportedException();
+                _gcDynamicTraceEvent += value;
             }
             remove
             {
-                throw new NotSupportedException();
+                _gcDynamicTraceEvent -= value;
             }
         }
 
@@ -118,6 +118,19 @@ namespace Microsoft.Diagnostics.Tracing.Parsers
             }
         }
 
+        private event Action<SizeAdaptationSampleTraceEvent> _gcSizeAdaptationSample;
+        public event Action<SizeAdaptationSampleTraceEvent> GCSizeAdaptationSample
+        {
+            add
+            {
+                _gcSizeAdaptationSample += value;
+            }
+            remove
+            {
+                _gcSizeAdaptationSample -= value;
+            }
+        }
+
         /// <summary>
         /// Responsible for dispatching the event after we determine its type
         /// and parse it.
@@ -136,10 +149,21 @@ namespace Microsoft.Diagnostics.Tracing.Parsers
                 _gcCommittedUsage(data.EventPayload as CommittedUsageTraceEvent);
             }
 
-            else if (_gcHeapCountSample != null && 
+            else if (_gcHeapCountSample != null &&
                 data.eventID == GCDynamicEvent.HeapCountSampleTemplate.ID)
             {
                 _gcHeapCountSample(data.EventPayload as HeapCountSampleTraceEvent);
+            }
+
+            else if (_gcSizeAdaptationSample != null &&
+                data.eventID == GCDynamicEvent.SizeAdaptationSampleTemplate.ID)
+            {
+                _gcSizeAdaptationSample(data.EventPayload as SizeAdaptationSampleTraceEvent);
+            }
+            else if (_gcDynamicTraceEvent != null &&
+                data.EventPayload is RawDynamicTraceEvent)
+            {
+                _gcDynamicTraceEvent(data.EventPayload as RawDynamicTraceEvent);
             }
         }
 
@@ -199,7 +223,8 @@ namespace Microsoft.Diagnostics.Tracing.Parsers.GCDynamic
         private readonly HeapCountTuningTraceEvent _heapCountTuningTemplate = new HeapCountTuningTraceEvent();
         private readonly CommittedUsageTraceEvent _committedUsageTemplate = new CommittedUsageTraceEvent();
         private readonly HeapCountSampleTraceEvent _heapCountSampleTemplate = new HeapCountSampleTraceEvent();
-        private readonly RawDynamicTraceData _rawTemplate = new RawDynamicTraceData();
+        private readonly SizeAdaptationSampleTraceEvent _sizeAdaptationSampleTraceEvent = new SizeAdaptationSampleTraceEvent();
+        private readonly RawDynamicTraceEvent _rawTemplate = new RawDynamicTraceEvent();
 
         /// <summary>
         /// Contains the fully parsed payload of the dynamic event.
@@ -221,6 +246,11 @@ namespace Microsoft.Diagnostics.Tracing.Parsers.GCDynamic
                 else if (eventID == GCDynamicEvent.HeapCountSampleTemplate.ID)
                 {
                     return _heapCountSampleTemplate.Bind(this);
+                }
+
+                else if (eventID == GCDynamicEvent.SizeAdaptationSampleTemplate.ID)
+                {
+                    return _sizeAdaptationSampleTraceEvent.Bind(this);
                 }
 
                 return _rawTemplate.Bind(this);
@@ -274,6 +304,11 @@ namespace Microsoft.Diagnostics.Tracing.Parsers.GCDynamic
                 eventTemplate = GCDynamicEvent.HeapCountSampleTemplate;
             }
 
+            else if (Name.Equals(GCDynamicEvent.SizeAdaptationSampleTemplate.OpcodeName, StringComparison.InvariantCultureIgnoreCase))
+            {
+                eventTemplate = GCDynamicEvent.SizeAdaptationSampleTemplate;
+            }
+
             SetMetadataFromTemplate(eventTemplate);
         }
 
@@ -295,10 +330,11 @@ namespace Microsoft.Diagnostics.Tracing.Parsers.GCDynamic
         /// <summary>
         /// The list of specific event templates.
         /// </summary>
-        internal static readonly RawDynamicTraceData RawDynamicTemplate = new RawDynamicTraceData();
+        internal static readonly RawDynamicTraceEvent RawDynamicTemplate = new RawDynamicTraceEvent();
         internal static readonly HeapCountTuningTraceEvent HeapCountTuningTemplate = new HeapCountTuningTraceEvent();
         internal static readonly CommittedUsageTraceEvent CommittedUsageTemplate = new CommittedUsageTraceEvent();
         internal static readonly HeapCountSampleTraceEvent HeapCountSampleTemplate = new HeapCountSampleTraceEvent();
+        internal static readonly SizeAdaptationSampleTraceEvent SizeAdaptationSampleTemplate = new SizeAdaptationSampleTraceEvent();
 
         /// <summary>
         /// Metadata that must be specified for each specific type of dynamic event.
@@ -340,7 +376,7 @@ namespace Microsoft.Diagnostics.Tracing.Parsers.GCDynamic
         }
     }
 
-    internal sealed class RawDynamicTraceData : GCDynamicEvent
+    public sealed class RawDynamicTraceEvent : GCDynamicEvent
     {
         internal override TraceEventID ID => (TraceEventID)39;
         internal override string TaskName => "GC";
@@ -624,5 +660,57 @@ namespace Microsoft.Diagnostics.Tracing.Parsers.GCDynamic
         public double ElapsedTimeBetweenGCsMSec { get; internal set; }
         public double GCPauseTimeMSec { get; internal set; }
         public double MslWaitTimeMSec { get; internal set; }
+    }
+
+    // TODO, AndrewAu, proper name
+    public sealed class RawDynamic
+    {
+        public string Name { get; internal set; }
+        public byte[] Payload { get; internal set; }
+    }
+
+    public class SizeAdaptationSampleTraceEvent : GCDynamicEvent
+    {
+        public short Version { get { return BitConverter.ToInt16(DataField, 0); } }
+        internal override TraceEventID ID => TraceEventID.Illegal - 13;
+        internal override string TaskName => "GC";
+        internal override string OpcodeName => "SizeAdaptationSample";
+        internal override string EventName => "GC/SizeAdaptationSample";
+
+        private string[] _payloadNames;
+
+        internal override string[] PayloadNames
+        {
+            get
+            {
+                if (_payloadNames == null)
+                {
+                    // TODO, AndrewAu, all other fields
+                    _payloadNames = new string[] { "Version" };
+                }
+
+                return _payloadNames;
+            }
+        }
+
+        internal override object PayloadValue(int index)
+        {
+            switch (index)
+            {
+                case 0:
+                    return Version;
+                default:
+                    Debug.Assert(false, "Bad field index");
+                    return null;
+            }
+        }
+
+        internal override IEnumerable<KeyValuePair<string, object>> PayloadValues
+        {
+            get
+            {
+                yield return new KeyValuePair<string, object>("Version", Version);
+            }
+        }
     }
 }

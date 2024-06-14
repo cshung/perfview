@@ -2974,6 +2974,7 @@ namespace Microsoft.Diagnostics.Tracing
                 declaredSet.Remove("CommittedUsage");
                 declaredSet.Remove("HeapCountTuning");
                 declaredSet.Remove("HeapCountSample");
+                declaredSet.Remove("SizeAdaptationSample");
             }
 
             var enumSet = new SortedDictionary<string, string>();

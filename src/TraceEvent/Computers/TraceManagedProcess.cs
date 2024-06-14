@@ -3,7 +3,7 @@
 //
 // This program uses code hyperlinks available as part of the HyperAddin Visual Studio plug-in.
 // It is available from http://www.codeplex.com/hyperAddin
-// using Microsoft.Diagnostics.Tracing.Parsers;
+
 using Microsoft.Diagnostics.Tracing.Analysis.GC;
 using Microsoft.Diagnostics.Tracing.Analysis.JIT;
 using Microsoft.Diagnostics.Tracing.Etlx;
@@ -18,6 +18,7 @@ using Microsoft.Diagnostics.Utilities;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Dynamic;
 using System.Linq;
 using System.Text;
 using Address = System.UInt64;
@@ -884,6 +885,12 @@ namespace Microsoft.Diagnostics.Tracing.Analysis
                 {
                     var stats = currentManagedProcess(heapCountSample.UnderlyingEvent);
                     GCStats.ProcessHeapCountSample(stats, heapCountSample);
+                };
+
+                source.Clr.GCDynamicEvent.GCDynamicTraceEvent += delegate (RawDynamicTraceEvent rawDynamicTraceData)
+                {
+                    var stats = currentManagedProcess(rawDynamicTraceData.UnderlyingEvent);
+                    GCStats.ProcessGCDynamicEvent(stats, rawDynamicTraceData);
                 };
 
                 source.Clr.GCGlobalHeapHistory += delegate (GCGlobalHeapHistoryTraceData data)
@@ -2416,7 +2423,7 @@ namespace Microsoft.Diagnostics.Tracing.Analysis.GC
         }
 
         public enum TimingType
-        {            
+        {
             /// <summary>
             /// This field records the time spent for marking roots (except objects pointed by sizedref handle and their descendents)
             ///
@@ -2522,7 +2529,8 @@ namespace Microsoft.Diagnostics.Tracing.Analysis.GC
                 if (gen == GenNumberHighest)
                 {
                     return HeapIndex;
-                }            }
+                }
+            }
 
             return 0;
         }
@@ -3328,7 +3336,146 @@ namespace Microsoft.Diagnostics.Tracing.Analysis.GC
 
         private float[] GCCpuServerGCThreads = null;
 
+        private Dictionary<string, List<RawDynamic>> dynamicEventIndex = new Dictionary<string, List<RawDynamic>>();
+
+        internal void AddDynamicEvent(RawDynamic rawDynamic)
+        {
+            List<RawDynamic> dynamicEvents;
+            if (!dynamicEventIndex.TryGetValue(rawDynamic.Name, out dynamicEvents))
+            {
+                dynamicEvents = new List<RawDynamic>();
+                dynamicEventIndex.Add(rawDynamic.Name, dynamicEvents);
+            }
+            dynamicEvents.Add(rawDynamic);
+        }
+
+        // TODO, AndrewAu, this is supposed to be specified from the Notebook (in general, callers)
+        public static List<DynamicEventSchema> DynamicEventSchemas = new List<DynamicEventSchema>
+        {
+            new DynamicEventSchema
+            {
+                DynamicEventName = "SizeAdaptationTuning",
+                Fields = new List<KeyValuePair<string, Type>>
+                {
+                    new KeyValuePair<string, Type>("version", typeof(ushort)),
+                    new KeyValuePair<string, Type>("new_n_heaps", typeof(ushort)),
+                    new KeyValuePair<string, Type>("current_gc_index", typeof(ulong)),
+                }
+            }
+        };
+
+        public dynamic DynamicEvents
+        {
+            get
+            {
+                return new DynamicIndex(dynamicEventIndex);
+            }
+        }
+
         #endregion
+    }
+
+    // TODO, AndrewAu, this could be compiled for better performance, right now we are doing linear lookups
+    // We can do validation so that the input make sense (i.e. no unexpected types, no duplicate event/field), etc
+    //
+    // Is TraceEvent the right home for these types? Maybe we will want to make it part of the GC.Infrastructure instead
+    //
+    public class DynamicEventSchema
+    {
+        public string DynamicEventName { get; set; }
+
+        public List<KeyValuePair<string, Type>> Fields { get; set; }
+    }
+
+    internal class DynamicIndex : DynamicObject
+    {
+        private Dictionary<string, List<RawDynamic>> index;
+
+        public DynamicIndex(Dictionary<string, List<RawDynamic>> index)
+        {
+            this.index = index;
+        }
+
+        public override bool TryGetMember(GetMemberBinder binder, out object result)
+        {
+            if (TraceGC.DynamicEventSchemas.Any(s => string.Equals(s.DynamicEventName, binder.Name)))
+            {
+                string name = binder.Name;
+                if (index.TryGetValue(name, out var indexValue))
+                {
+                    // TODO, andrewau, handle the case where we have multiple dynamic event of the same name in a single GC.
+                    //
+                    // That should be an array of these dynamic events
+                    // Somewhere the schema should tell us if this is expected or not so not to generate wrong stuff just because the data is corrupted.
+                    // 
+                    result = new DynamicEvent(indexValue[0], TraceGC.DynamicEventSchemas.Single(s => string.Equals(s.DynamicEventName, binder.Name)).Fields);
+                    return true;
+                }
+                else
+                {
+                    result = null;
+                    return true;
+                }
+            }
+            else
+            {
+                result = null;
+                return false;
+            }
+        }
+    }
+
+    internal class DynamicEvent : DynamicObject
+    {
+        private RawDynamic rawDynamic;
+        private Dictionary<string, object> fieldValues;
+
+        public DynamicEvent(RawDynamic rawDynamic, List<KeyValuePair<string, Type>> fields)
+        {
+            this.rawDynamic = rawDynamic;
+            this.fieldValues = new Dictionary<string, object>();
+            int offset = 0;
+            foreach (KeyValuePair<string, Type> field in fields)
+            {
+                object value = null;
+                // TODO, AndrewAu, all types that we envision this will be needed
+                if (field.Value == typeof(ushort))
+                {
+                    value = BitConverter.ToUInt16(rawDynamic.Payload, offset);
+                    offset += 2;
+                }
+                else if (field.Value == typeof(ulong))
+                {
+                    value = BitConverter.ToUInt64(rawDynamic.Payload, offset);
+                    offset += 8;
+                }
+                else
+                {
+                    Debug.Fail("Unknown field type");
+                }
+                this.fieldValues.Add(field.Key, value);
+            }
+        }
+
+        public override bool TryGetMember(GetMemberBinder binder, out object result)
+        {
+            string name = binder.Name;
+            if (fieldValues.TryGetValue(name, out var fieldValue))
+            {
+                result = fieldValue;
+                return true;
+            }
+            else
+            {
+                result = null;
+                return false;
+            }
+        }
+
+        public override string ToString()
+        {
+            return "I am " + this.rawDynamic.Name + " with these fields: \n" + string.Join("\n", this.fieldValues.Select(kvp => kvp.Key + "->" + kvp.Value));
+        }
     }
 
     /// <summary>
@@ -4933,12 +5080,12 @@ namespace Microsoft.Diagnostics.Tracing.Analysis.GC
             {
                 CommittedUsage traceData = new CommittedUsage
                 {
-                    Version                        = committedUsage.Version,
-                    TotalCommittedInUse            = committedUsage.TotalCommittedInUse,
+                    Version = committedUsage.Version,
+                    TotalCommittedInUse = committedUsage.TotalCommittedInUse,
                     TotalCommittedInGlobalDecommit = committedUsage.TotalCommittedInGlobalDecommit,
-                    TotalCommittedInFree           = committedUsage.TotalCommittedInFree,
-                    TotalCommittedInGlobalFree     = committedUsage.TotalCommittedInGlobalFree,
-                    TotalBookkeepingCommitted      = committedUsage.TotalBookkeepingCommitted
+                    TotalCommittedInFree = committedUsage.TotalCommittedInFree,
+                    TotalCommittedInGlobalFree = committedUsage.TotalCommittedInGlobalFree,
+                    TotalBookkeepingCommitted = committedUsage.TotalBookkeepingCommitted
                 };
 
                 if (_event.CommittedUsageBefore == null)
@@ -4947,7 +5094,7 @@ namespace Microsoft.Diagnostics.Tracing.Analysis.GC
                 }
                 else
                 {
-                    Debug.Assert(_event.CommittedUsageAfter == null);
+                    // Debug.Assert(_event.CommittedUsageAfter == null);
                     _event.CommittedUsageAfter = traceData;
                 }
             }
@@ -4961,15 +5108,15 @@ namespace Microsoft.Diagnostics.Tracing.Analysis.GC
                 // Copy over the contents of the dynamic data to prevent issues when the event is reused.
                 _event.HeapCountTuning = new HeapCountTuning
                 {
-                    Version                       = heapCountTuning.Version,
-                    NewHeapCount                  = heapCountTuning.NewHeapCount,
-                    GCIndex                       = heapCountTuning.GCIndex,
-                    MedianThroughputCostPercent         = heapCountTuning.MedianThroughputCostPercent,
+                    Version = heapCountTuning.Version,
+                    NewHeapCount = heapCountTuning.NewHeapCount,
+                    GCIndex = heapCountTuning.GCIndex,
+                    MedianThroughputCostPercent = heapCountTuning.MedianThroughputCostPercent,
                     SmoothedMedianThroughputCostPercent = heapCountTuning.SmoothedMedianThroughputCostPercent,
-                    ThroughputCostPercentReductionPerStepUp    = heapCountTuning.ThroughputCostPercentReductionPerStepUp,
-                    ThroughputCostPercentIncreasePerStepDown   = heapCountTuning.ThroughputCostPercentIncreasePerStepDown,
-                    SpaceCostPercentIncreasePerStepUp    = heapCountTuning.SpaceCostPercentIncreasePerStepUp,
-                    SpaceCostPercentDecreasePerStepDown  = heapCountTuning.SpaceCostPercentDecreasePerStepDown
+                    ThroughputCostPercentReductionPerStepUp = heapCountTuning.ThroughputCostPercentReductionPerStepUp,
+                    ThroughputCostPercentIncreasePerStepDown = heapCountTuning.ThroughputCostPercentIncreasePerStepDown,
+                    SpaceCostPercentIncreasePerStepUp = heapCountTuning.SpaceCostPercentIncreasePerStepUp,
+                    SpaceCostPercentDecreasePerStepDown = heapCountTuning.SpaceCostPercentDecreasePerStepDown
                 };
             }
         }
@@ -4981,13 +5128,26 @@ namespace Microsoft.Diagnostics.Tracing.Analysis.GC
             {
                 _event.HeapCountSample = new HeapCountSample
                 {
-                    Version               = heapCountSample.Version,
-                    GCIndex               = heapCountSample.GCIndex,
+                    Version = heapCountSample.Version,
+                    GCIndex = heapCountSample.GCIndex,
                     // Convert the microsecond properties to MSec to be consistent with the other time based metrics.
                     ElapsedTimeBetweenGCsMSec = heapCountSample.ElapsedTimeBetweenGCs / 1000.0,
-                    GCPauseTimeMSec           = heapCountSample.GCPauseTime / 1000.0,
-                    MslWaitTimeMSec           = heapCountSample.MslWaitTime / 1000.0
+                    GCPauseTimeMSec = heapCountSample.GCPauseTime / 1000.0,
+                    MslWaitTimeMSec = heapCountSample.MslWaitTime / 1000.0
                 };
+            }
+        }
+
+        internal static void ProcessGCDynamicEvent(TraceLoadedDotNetRuntime proc, RawDynamicTraceEvent rawDynamicTraceData)
+        {
+            TraceGC _event = GetLastGC(proc);
+            if (_event != null)
+            {
+                _event.AddDynamicEvent(new RawDynamic
+                {
+                    Name = rawDynamicTraceData.UnderlyingEvent.Name,
+                    Payload = rawDynamicTraceData.DataField
+                });
             }
         }
 
